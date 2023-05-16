@@ -1,60 +1,16 @@
-# ---
-# jupyter:
-#   jupytext:
-#     formats: ipynb,py:percent
-#     text_representation:
-#       extension: .py
-#       format_name: percent
-#       format_version: '1.3'
-#       jupytext_version: 1.11.3
-#   kernelspec:
-#     display_name: Python 3
-#     language: python
-#     name: python3
-# ---
-
-# %% [markdown]
-# Before we begin, we will change a few settings to make the notebook look a bit prettier
-
-# %% language="html"
-# <style> body {font-family: "Calibri", cursive, sans-serif;} </style>
-
-
-# %% [markdown]
-#
-# # 00 - Understanding DeepSurv (using Keras)
-# Before anything else, it makes sense to spend some time in understanding
-# how the original DeepSurv works. In this notebook, we take an example dataset
-# and go step by step through the algorithm. Please note that the code 
-# here was written with clarity over performance in mind.
-#
-# ## Preliminaries
-#
-# Import packages
-
-# %%
 import pathlib
 import numpy as np
-
 import tensorflow as tf
 from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.layers import Dense, Dropout, ActivityRegularization
 from tensorflow.keras.optimizers import Nadam
 from tensorflow.keras.regularizers import l2
-
 from lifelines import utils
-
 from sklearn.preprocessing import StandardScaler
-
 from matplotlib import pyplot as plt
-
 import h5py
 
 
-# %% [markdown]
-# Define paths.
-
-# %%
 example_file = '00_understanding_deepsurv'
 PATH_DATA = pathlib.Path(r'../deepsurvk/datasets/data')
 PATH_MODELS = pathlib.Path('./models/')
@@ -68,7 +24,7 @@ if not PATH_MODELS.exists():
     print("Creating models directory in " + str(PATH_MODELS) + "...\t", end="", flush=True)
     PATH_MODELS.mkdir(parents=True)
     print("DONE!")
-    
+
 
 
 # %% [markdown]
@@ -133,21 +89,21 @@ E_train = E_train[sort_idx]
 # ## Define the loss function
 # DeepSurv's loss function is the average negative log partial likelihood with
 # regularization (Eq. 4, p. 3):
-#    
+#
 # $$l_{\theta} = -\frac{1}{N_{E=1}} \sum_{i:E_i=1} \left( \hat{h}_\theta(x_i) -\log \sum_{j \in {\rm I\!R}(T_i)} \exp^{\hat{h}_\theta(x_j)} \right) + \lambda \cdot \Vert \theta \Vert_2^2 $$
 #
 # We can see that our loss function depends on three parameters:
 # `y_true`, `y_pred`, *and* `E`. Unfortunately, custom loss functions in Keras
 # [need to have their signature (i.e., prototype) as](https://keras.io/api/losses/#creating-custom-losses)
 # `loss_fn(y_true, y_pred)`. To overcome this, we will use a [small trick](https://github.com/keras-team/keras/issues/2121)
-# that is actually well known in the community. This way, we can define the 
+# that is actually well known in the community. This way, we can define the
 # negative log likelihood function as
 
 # %%
 def negative_log_likelihood(E):
     def loss(y_true, y_pred):
-        
-        hazard_ratio = tf.math.exp(y_pred)        
+
+        hazard_ratio = tf.math.exp(y_pred)
         log_risk = tf.math.log(tf.math.cumsum(hazard_ratio))
         uncensored_likelihood = tf.transpose(y_pred) - log_risk
         censored_likelihood = uncensored_likelihood * E
@@ -160,11 +116,11 @@ def negative_log_likelihood(E):
         # num_observed_events = tf.math.cumsum(E)
         # num_observed_events = tf.cast(num_observed_events, dtype=tf.float32)
         num_observed_events = tf.constant(1, dtype=tf.float32)
-        
-        neg_likelihood = neg_likelihood_ / num_observed_events        
-        
+
+        neg_likelihood = neg_likelihood_ / num_observed_events
+
         return neg_likelihood
-    
+
     return loss
 
 
@@ -184,14 +140,14 @@ n_nodes = 48
 learning_rate = 0.067
 l2_reg = 16.094
 dropout = 0.147
-lr_decay =  6.494e-4
+lr_decay = 6.494e-4
 momentum = 0.863
 
 
 # %% [markdown]
 #
 # ## Model construction
-# Now we can build the model. We will do this using the `Sequential` 
+# Now we can build the model. We will do this using the `Sequential`
 # constructor, thus adding layer by layer.
 #
 # The initialization of the nodes weights can be done in many different
@@ -201,7 +157,7 @@ momentum = 0.863
 # Therefore, we will stick with that initialization as well.
 #
 # Notice that this architecture works for the sample dataset (WHAS).
-# It is slightly different for each dataset (mainly the optimizer and 
+# It is slightly different for each dataset (mainly the optimizer and
 # number of hidden layers).
 
 # %%
@@ -218,8 +174,8 @@ model.add(ActivityRegularization(l2=l2_reg))
 
 # Define the optimizer
 # Nadam is Adam + Nesterov momentum
-# optimizer = Nadam(learning_rate=learning_rate, decay=lr_decay, clipnorm=1) 
-optimizer = Nadam(learning_rate=learning_rate, decay=lr_decay)
+# optimizer = Nadam(learning_rate=learning_rate, decay=lr_decay, clipnorm=1)
+optimizer = Nadam(learning_rate=learning_rate, weight_decay=lr_decay)
 
 # Compile the model and show a summary of it
 model.compile(loss=negative_log_likelihood(E_train), optimizer=optimizer)
@@ -230,8 +186,8 @@ model.summary()
 # Sometimes, the computation of the loss yields a `NaN`, which makes the whole
 # output be `NaN` as well. I haven't identified a pattern, actually I think
 # it is quite random. This could be due to a variety of reasons, including
-# model parametrization (however, I don't really want to use different 
-# parameters than those reported), maybe even unfortunate parameter 
+# model parametrization (however, I don't really want to use different
+# parameters than those reported), maybe even unfortunate parameter
 # initialization. Therefore, we will use a technique called "Early Stopping".
 #
 # In this case, we will train the model until the number of epochs is reached
@@ -246,15 +202,15 @@ callbacks = [tf.keras.callbacks.TerminateOnNaN(),
 
 # %% [markdown]
 # ## Model fitting
-# Now we can fit the DeepSurv model. Notice how we use the whole set of 
-# patients in a batch. Furthermore, be sure that `shuffle` is set to `False`, 
+# Now we can fit the DeepSurv model. Notice how we use the whole set of
+# patients in a batch. Furthermore, be sure that `shuffle` is set to `False`,
 # since order is important in predicting ranked survival.
 
 # %%
 epochs = 500
-history = model.fit(X_train, Y_train, 
-                    batch_size=n_patients_train, 
-                    epochs=epochs, 
+history = model.fit(X_train, Y_train,
+                    batch_size=n_patients_train,
+                    epochs=epochs,
                     callbacks=callbacks,
                     shuffle=False)
 

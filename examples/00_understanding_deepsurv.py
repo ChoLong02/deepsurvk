@@ -35,19 +35,31 @@ if not PATH_MODELS.exists():
 
 # %%
 path_data_file = PATH_DATA/'whas.h5'
+# X_train: 데이터
+# E_train: Deadstatus.event
+# Y_train: Survival days
 
 # Read training data.
-with h5py.File(path_data_file, 'r') as f:
-    X_train = f['train']['x'][()]
-    E_train = f['train']['e'][()]
-    Y_train = f['train']['t'][()].reshape(-1, 1)
-
+# with h5py.File(path_data_file, 'r') as f:
+#     X_train = f['train']['x'][()]
+#     E_train = f['train']['e'][()]
+#     Y_train = f['train']['t'][()].reshape(-1, 1)
 
 # Read testing data.
-with h5py.File(path_data_file, 'r') as f:
-    X_test = f['test']['x'][()]
-    E_test = f['test']['e'][()]
-    Y_test = f['test']['t'][()].reshape(-1, 1)
+# with h5py.File(path_data_file, 'r') as f:
+#     X_test = f['test']['x'][()]
+#     E_test = f['test']['e'][()]
+#     Y_test = f['test']['t'][()].reshape(-1, 1)
+
+
+X_train = np.load("../deepsurvk/datasets/X_train_1000.npy")
+E_train = np.load("../deepsurvk/datasets/E_train_1000.npy")
+Y_train = np.load("../deepsurvk/datasets/Y_train_1000.npy")
+
+X_test = np.load("../deepsurvk/datasets/X_test_200.npy")
+E_test = np.load("../deepsurvk/datasets/E_test_200.npy")
+Y_test = np.load("../deepsurvk/datasets/Y_test_200.npy")
+
 
 # Calculate important parameters.
 n_patients_train = X_train.shape[0]
@@ -63,13 +75,13 @@ n_features = X_train.shape[1]
 # the testing partition for the model training.)
 
 # %%
-X_scaler = StandardScaler().fit(X_train)
-X_train = X_scaler.transform(X_train)
-X_test = X_scaler.transform(X_test)
-
-Y_scaler = StandardScaler().fit(Y_train.reshape(-1, 1))
-Y_train = Y_scaler.transform(Y_train)
-Y_test = Y_scaler.transform(Y_test)
+# X_scaler = StandardScaler().fit(X_train)
+# X_train = X_scaler.transform(X_train)
+# X_test = X_scaler.transform(X_test)
+#
+# Y_scaler = StandardScaler().fit(Y_train.reshape(-1, 1))
+# Y_train = Y_scaler.transform(Y_train)
+# Y_test = Y_scaler.transform(Y_test)
 
 Y_train = Y_train.flatten()
 Y_test = Y_test.flatten()
@@ -116,25 +128,11 @@ def negative_log_likelihood(E):
         # num_observed_events = tf.math.cumsum(E)
         # num_observed_events = tf.cast(num_observed_events, dtype=tf.float32)
         num_observed_events = tf.constant(1, dtype=tf.float32)
-
         neg_likelihood = neg_likelihood_ / num_observed_events
-
         return neg_likelihood
-
     return loss
 
 
-# %% [markdown]
-# with regularization added further on (as part of the network architecture).
-#
-# ## Define model parameters
-# Nothing spectacular here. You can see these are pretty standard parameters.
-# We will use the values reported in Table 2 (p. 10).
-#
-# If you decide to try a different dataset, be sure to change these
-# accordingly!
-
-# %%
 activation = 'relu'
 n_nodes = 48
 learning_rate = 0.067
@@ -144,23 +142,6 @@ lr_decay = 6.494e-4
 momentum = 0.863
 
 
-# %% [markdown]
-#
-# ## Model construction
-# Now we can build the model. We will do this using the `Sequential`
-# constructor, thus adding layer by layer.
-#
-# The initialization of the nodes weights can be done in many different
-# ways. In the original DeepSurv implementation, they used [Glorot
-# with weights sampled from the uniform distribution](https://github.com/jaredleekatzman/DeepSurv/blob/198bb2375ea2d2cad93e568ffc550889366494ef/deepsurv/deep_surv.py#L78),
-# as proposed by [Glorot and Bengio (2010)](http://proceedings.mlr.press/v9/glorot10a/glorot10a.pdf).
-# Therefore, we will stick with that initialization as well.
-#
-# Notice that this architecture works for the sample dataset (WHAS).
-# It is slightly different for each dataset (mainly the optimizer and
-# number of hidden layers).
-
-# %%
 # Create model
 model = Sequential()
 model.add(Dense(units=n_features, activation=activation, kernel_initializer='glorot_uniform', input_shape=(n_features,)))
@@ -206,37 +187,21 @@ callbacks = [tf.keras.callbacks.TerminateOnNaN(),
 # patients in a batch. Furthermore, be sure that `shuffle` is set to `False`,
 # since order is important in predicting ranked survival.
 
-# %%
-epochs = 500
+epochs = 200
 history = model.fit(X_train, Y_train,
                     batch_size=n_patients_train,
                     epochs=epochs,
                     callbacks=callbacks,
                     shuffle=False)
 
-# %% [markdown]
-# We can see how the loss changed with the number of epochs.
-
-# %%
-fig, ax = plt.subplots(1, 1, figsize=[5, 5])
-plt.plot(history.history['loss'], label='train')
-ax.set_xlabel("No. epochs")
-ax.set_ylabel("Loss [u.a.]")
+# fig, ax = plt.subplots(1, 1, figsize=[5, 5])
+# plt.plot(history.history['loss'], label='train')
+# ax.set_xlabel("No. epochs")
+# ax.set_ylabel("Loss [u.a.]")
 
 
-# %% [markdown]
-# During training, we saved the model with the lowest loss value (i.e., Early Stop).
-# Now, we need to load it. Since we defined our own custom function,
-# it is important to [use the `compile=False` parameter](https://github.com/keras-team/keras/issues/5916#issuecomment-592269254).
-
-# %%
 model = load_model(PATH_MODELS/f'{example_file}.h5', compile=False)
 
-# %% [markdown]
-# ## Model predictions
-# Finally, we can generate predictions using the DeepSurv model.
-
-# %%
 Y_pred_train = np.exp(-model.predict(X_train))
 c_index_train = utils.concordance_index(Y_train, Y_pred_train, E_train)
 print(f"c-index of training dataset = {c_index_train}")
@@ -244,7 +209,3 @@ print(f"c-index of training dataset = {c_index_train}")
 Y_pred_test = np.exp(-model.predict(X_test))
 c_index_test = utils.concordance_index(Y_test, Y_pred_test, E_test)
 print(f"c-index of testing dataset = {c_index_test}")
-
-# %% [markdown]
-# We can see that these numbers are within the ballpark estimate of what is
-# reported in the original paper for this dataset (0.86-0.87, Table 1, p. 6).
